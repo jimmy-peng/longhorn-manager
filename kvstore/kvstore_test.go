@@ -60,19 +60,25 @@ func (s *TestSuite) TestNode(c *C) {
 
 func (s *TestSuite) testNode(c *C, st *KVStore) {
 	node1 := &types.NodeInfo{
-		ID:   util.UUID(),
-		Name: "node-1",
-		IP:   "127.0.1.1",
+		ID: util.UUID(),
+		IP: "127.0.1.1",
+		Metadata: types.Metadata{
+			Name: "node-1",
+		},
 	}
 	node2 := &types.NodeInfo{
-		ID:   util.UUID(),
-		Name: "node-2",
-		IP:   "127.0.1.2",
+		ID: util.UUID(),
+		IP: "127.0.1.2",
+		Metadata: types.Metadata{
+			Name: "node-2",
+		},
 	}
 	node3 := &types.NodeInfo{
-		ID:   util.UUID(),
-		Name: "node-3",
-		IP:   "127.0.1.3",
+		ID: util.UUID(),
+		IP: "127.0.1.3",
+		Metadata: types.Metadata{
+			Name: "node-3",
+		},
 	}
 
 	node, err := st.GetNode("random")
@@ -95,7 +101,7 @@ func (s *TestSuite) testNode(c *C, st *KVStore) {
 
 	node, err = st.GetNode(node1.ID)
 	c.Assert(err, IsNil)
-	UpdateKVIndex(node1, node)
+	UpdateResourceVersion(node1, node)
 	c.Assert(node, DeepEquals, node1)
 
 	node1.IP = "127.0.2.2"
@@ -103,7 +109,7 @@ func (s *TestSuite) testNode(c *C, st *KVStore) {
 
 	node, err = st.GetNode(node1.ID)
 	c.Assert(err, IsNil)
-	UpdateKVIndex(node1, node)
+	UpdateResourceVersion(node1, node)
 	c.Assert(node, DeepEquals, node1)
 
 	s.verifyConcurrentExecution(c, st.CreateNode, node2)
@@ -111,17 +117,17 @@ func (s *TestSuite) testNode(c *C, st *KVStore) {
 
 	node, err = st.GetNode(node1.ID)
 	c.Assert(err, IsNil)
-	UpdateKVIndex(node1, node)
+	UpdateResourceVersion(node1, node)
 	c.Assert(node, DeepEquals, node1)
 
 	node, err = st.GetNode(node2.ID)
 	c.Assert(err, IsNil)
-	UpdateKVIndex(node2, node)
+	UpdateResourceVersion(node2, node)
 	c.Assert(node, DeepEquals, node2)
 
 	node, err = st.GetNode(node3.ID)
 	c.Assert(err, IsNil)
-	UpdateKVIndex(node3, node)
+	UpdateResourceVersion(node3, node)
 	c.Assert(node, DeepEquals, node3)
 
 	nodes, err = st.ListNodes()
@@ -159,7 +165,7 @@ func (s *TestSuite) testSettings(c *C, st *KVStore) {
 
 	newSettings, err := st.GetSettings()
 	c.Assert(err, IsNil)
-	UpdateKVIndex(settings, newSettings)
+	UpdateResourceVersion(settings, newSettings)
 	c.Assert(newSettings, DeepEquals, settings)
 
 	settings.BackupTarget = "nfs://4.3.2.1:/test"
@@ -167,16 +173,18 @@ func (s *TestSuite) testSettings(c *C, st *KVStore) {
 
 	newSettings, err = st.GetSettings()
 	c.Assert(err, IsNil)
-	UpdateKVIndex(settings, newSettings)
+	UpdateResourceVersion(settings, newSettings)
 	c.Assert(newSettings, DeepEquals, settings)
 }
 
 func generateTestVolume(name string) *types.VolumeInfo {
 	return &types.VolumeInfo{
-		Name:                name,
 		Size:                1024 * 1024,
 		NumberOfReplicas:    2,
 		StaleReplicaTimeout: 1,
+		Metadata: types.Metadata{
+			Name: name,
+		},
 	}
 }
 
@@ -185,10 +193,12 @@ func generateTestController(volName string) *types.ControllerInfo {
 		types.InstanceInfo{
 			ID:         "controller-id-" + volName,
 			Type:       types.InstanceTypeController,
-			Name:       "controller-name-" + volName,
 			Running:    true,
 			IP:         "1.2.3.4",
 			VolumeName: volName,
+			Metadata: types.Metadata{
+				Name: "controller-name-" + volName,
+			},
 		},
 	}
 }
@@ -198,10 +208,12 @@ func generateTestReplica(volName, replicaName string) *types.ReplicaInfo {
 		InstanceInfo: types.InstanceInfo{
 			ID:         "replica-id-" + replicaName + "-" + volName,
 			Type:       types.InstanceTypeReplica,
-			Name:       "replica-name-" + replicaName + "-" + volName,
 			Running:    true,
 			IP:         "5.6.7.8",
 			VolumeName: volName,
+			Metadata: types.Metadata{
+				Name: "replica-name-" + replicaName + "-" + volName,
+			},
 		},
 	}
 }
@@ -223,7 +235,7 @@ func (s *TestSuite) createUpdateVerifyVolume(c *C, st *KVStore, volume *types.Vo
 
 	vol, err = st.GetVolume(volume.Name)
 	c.Assert(err, IsNil)
-	UpdateKVIndex(volume, vol)
+	UpdateResourceVersion(volume, vol)
 	c.Assert(vol, DeepEquals, volume)
 
 	volume.StaleReplicaTimeout = 2
@@ -232,7 +244,7 @@ func (s *TestSuite) createUpdateVerifyVolume(c *C, st *KVStore, volume *types.Vo
 
 	vol, err = st.GetVolume(volume.Name)
 	c.Assert(err, IsNil)
-	UpdateKVIndex(volume, vol)
+	UpdateResourceVersion(volume, vol)
 	c.Assert(vol, DeepEquals, volume)
 }
 
@@ -271,7 +283,7 @@ func (s *TestSuite) createUpdateVerifyController(c *C, st *KVStore, controller *
 
 	ctl, err = st.GetVolumeController(controller.VolumeName)
 	c.Assert(err, IsNil)
-	UpdateKVIndex(controller, ctl)
+	UpdateResourceVersion(controller, ctl)
 	c.Assert(ctl, DeepEquals, controller)
 
 	controller.Running = false
@@ -280,7 +292,7 @@ func (s *TestSuite) createUpdateVerifyController(c *C, st *KVStore, controller *
 
 	ctl, err = st.GetVolumeController(controller.VolumeName)
 	c.Assert(err, IsNil)
-	UpdateKVIndex(controller, ctl)
+	UpdateResourceVersion(controller, ctl)
 	c.Assert(ctl, DeepEquals, controller)
 }
 
@@ -309,7 +321,7 @@ func (s *TestSuite) createUpdateVerifyReplica(c *C, st *KVStore, replica *types.
 
 	rep, err = st.GetVolumeReplica(replica.VolumeName, replica.Name)
 	c.Assert(err, IsNil)
-	UpdateKVIndex(replica, rep)
+	UpdateResourceVersion(replica, rep)
 	c.Assert(rep, DeepEquals, replica)
 
 	reps, err := st.ListVolumeReplicas(replica.VolumeName)
@@ -322,7 +334,7 @@ func (s *TestSuite) createUpdateVerifyReplica(c *C, st *KVStore, replica *types.
 
 	rep, err = st.GetVolumeReplica(replica.VolumeName, replica.Name)
 	c.Assert(err, IsNil)
-	UpdateKVIndex(replica, rep)
+	UpdateResourceVersion(replica, rep)
 	c.Assert(rep, DeepEquals, replica)
 }
 

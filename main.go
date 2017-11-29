@@ -7,16 +7,17 @@ import (
 	"strconv"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/pkg/errors"
 	"github.com/urfave/cli"
 
 	"github.com/rancher/longhorn-manager/api"
-	"github.com/rancher/longhorn-manager/crdstore"
 	"github.com/rancher/longhorn-manager/datastore"
 	"github.com/rancher/longhorn-manager/engineapi"
 	"github.com/rancher/longhorn-manager/kvstore"
 	"github.com/rancher/longhorn-manager/manager"
 	"github.com/rancher/longhorn-manager/orchestrator"
 	"github.com/rancher/longhorn-manager/orchestrator/docker"
+	"github.com/rancher/longhorn-manager/orchestrator/kubernetes"
 	"github.com/rancher/longhorn-manager/types"
 )
 
@@ -51,8 +52,8 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:  FlagOrchestrator,
-			Usage: "Choose orchestrator: docker",
-			Value: "docker",
+			Usage: "Choose orchestrator: kubernetes, docker",
+			Value: "kubernetes",
 		},
 
 		cli.StringFlag{
@@ -60,6 +61,8 @@ func main() {
 			EnvVar: EnvEngineImage,
 			Usage:  "Specify Longhorn engine image",
 		},
+
+		// Docker
 		cli.StringSliceFlag{
 			Name:  FlagETCDServers,
 			Usage: "etcd server ip and port, in format `http://etcd1:2379,http://etcd2:2379`",
@@ -69,8 +72,6 @@ func main() {
 			Usage: "the prefix using with etcd server",
 			Value: "/longhorn",
 		},
-
-		// Docker
 		cli.StringFlag{
 			Name:  FlagDockerNetwork,
 			Usage: "use specified docker network, can be omitted for auto detection",
@@ -87,6 +88,7 @@ func RunManager(c *cli.Context) error {
 	var (
 		orch      orchestrator.Orchestrator
 		forwarder *orchestrator.Forwarder
+		ds        datastore.DataStore
 		err       error
 		ds        datastore.DataStore
 	)
@@ -101,7 +103,20 @@ func RunManager(c *cli.Context) error {
 	}
 
 	orchName := c.String("orchestrator")
-	if orchName == "docker" {
+	if orchName == "kubernetes" {
+		cfg := &kubernetes.Config{
+			EngineImage: engineImage,
+		}
+		orch, err = kubernetes.NewOrchestrator(cfg)
+		if err != nil {
+			return err
+		}
+
+		ds, err = datastore.NewCRDStore("")
+		if err != nil {
+			return errors.Wrap(err, "fail to create CRD store")
+		}
+	} else if orchName == "docker" {
 		cfg := &docker.Config{
 			EngineImage: engineImage,
 			Network:     c.String(FlagDockerNetwork),
@@ -110,31 +125,27 @@ func RunManager(c *cli.Context) error {
 		if err != nil {
 			return err
 		}
+		orch = docker
 
+		// Docker cannot manage cluster, we need forwarder to help
 		forwarder = orchestrator.NewForwarder(docker)
 		orch = forwarder
-	} else {
-		return fmt.Errorf("invalid orchestrator %v", orchName)
-	}
 
-	etcdServers := c.StringSlice(FlagETCDServers)
-	if len(etcdServers) == 0 {
-		// Fall back to CRD
-		crd, err := crdstore.NewCRDStore("/longhorn_manager_test", "")
-		if err != nil {
-			return err
+		etcdServers := c.StringSlice(FlagETCDServers)
+		if len(etcdServers) == 0 {
+			return fmt.Errorf("require %v", FlagETCDServers)
 		}
-		ds = crd
-	} else {
 		etcdBackend, err := kvstore.NewETCDBackend(etcdServers)
 		if err != nil {
 			return err
 		}
-		etcd, err := kvstore.NewKVStore("/longhorn_manager_test", etcdBackend)
+		etcd, err := kvstore.NewKVStore(FlagETCDPrefix, etcdBackend)
 		if err != nil {
 			return err
 		}
 		ds = etcd
+	} else {
+		return fmt.Errorf("invalid orchestrator %v", orchName)
 	}
 
 	engines := &engineapi.EngineCollection{}

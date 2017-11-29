@@ -234,17 +234,18 @@ func (v *ManagedVolume) syncWithEngineState(engineReps map[string]*engineapi.Rep
 				rebuildingReplicaCount++
 			} else {
 				// means engineRep.Mode == engineapi.ReplicaModeERR
-				continue
+				if replica, ok := addr2Replica[addr]; ok {
+					badReplicas[replica.Name] = struct{}{}
+				}
 			}
 			if addr2Replica[addr] == nil {
 				logrus.Errorf("BUG: cannot find replica address %v in replicas", addr)
 			}
 			delete(addr2Replica, addr)
 		}
-		// those replicas doesn't show up in controller as WO or RW
-		for _, replica := range addr2Replica {
-			badReplicas[replica.Name] = struct{}{}
-		}
+		// those replicas doesn't show up in controller as WO or RW,
+		// assuming there are rebuilding
+		rebuildingReplicaCount += len(addr2Replica)
 	}
 
 	state := v.State
